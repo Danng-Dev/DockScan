@@ -67,7 +67,7 @@ def parser() -> argparse.ArgumentParser:
     agent.add_argument("--bind", default="127.0.0.1")
     agent.add_argument("--port", type=int, default=45832)
     agent.add_argument("--token", help="required shared token when using --serve")
-    agent.add_argument("--token-file", type=Path, help="mode-0600 token file for outbound enrollment")
+    agent.add_argument("--token-file", type=Path, help="mode-0600 token file for direct serving or outbound enrollment")
     agent.add_argument("--tls-cert", help="PEM server certificate")
     agent.add_argument("--tls-key", help="PEM server private key")
     agent.add_argument("--tls-ca", help="PEM CA bundle for client-certificate verification")
@@ -270,9 +270,17 @@ def main() -> None:
             print("Outbound enrollment approved by controller.")
             return
         if args.serve:
-            if not args.token:
-                parser.error("agent --serve requires --token")
-            serve(args.bind, args.port, args.token, args.accept_insecure, args.tls_cert, args.tls_key, args.tls_ca, set(args.allowed_client_name))
+            if not args.token and not args.token_file:
+                parser.error("agent --serve requires --token or --token-file")
+            if args.token_file:
+                if not args.token_file.is_file():
+                    parser.error("token file does not exist")
+                if __import__("os").name != "nt" and args.token_file.stat().st_mode & 0o077:
+                    parser.error("token file permissions must be 0600 or stricter")
+                token = args.token_file.read_text().strip()
+            else:
+                token = args.token
+            serve(args.bind, args.port, token, args.accept_insecure, args.tls_cert, args.tls_key, args.tls_ca, set(args.allowed_client_name))
             return
         if not args.json:
             parser.error("agent requires --json or --serve")
