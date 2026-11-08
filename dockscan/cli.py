@@ -5,7 +5,7 @@ from pathlib import Path
 from .collectors import collect
 from .agent_server import serve
 from .interactive import interactive
-from .pki import enroll_step_ca
+from .pki import enroll_step_ca, create_jwk_provisioner
 from .blueprint import create_blueprint, inspect_blueprint, sign_blueprint, verify_signature, recovery_plan
 from .models import HostInventory
 from .encsec import decrypt as decrypt_encsec, encrypt as encrypt_encsec, inspect as inspect_encsec
@@ -17,6 +17,7 @@ from .trust import add as trust_add, load as trust_load, revoke as trust_revoke
 from .migrations import preview as migration_preview, migrate as migrate_blueprint
 from .evidence import create as create_evidence
 from .staticify import staticify
+from .update import check as update_check, apply as update_apply
 from .recovery import write_recovery_kit
 from .remote import collect_remote
 
@@ -102,6 +103,16 @@ def parser() -> argparse.ArgumentParser:
     enroll.add_argument("--key", type=Path, help="output private-key path; defaults to /etc/dockscan/<name>-key.pem")
     enroll.add_argument("--san", action="append", default=[], help="DNS name or IP SAN; repeat as needed")
     enroll.add_argument("--dry-run", action="store_true", help="validate and show no token-bearing commands")
+    provisioner = step_commands.add_parser("provisioner", help="manage local CA provisioners using the supported Step CLI")
+    provisioner_commands = provisioner.add_subparsers(dest="provisioner_action", required=True)
+    create_provisioner = provisioner_commands.add_parser("create", help="create a local password-protected JWK provisioner and restart step-ca")
+    create_provisioner.add_argument("--name", required=True)
+    create_provisioner.add_argument("--ca-config", type=Path, default=Path("/etc/step-ca/config/ca.json"))
+    create_provisioner.add_argument("--password-file", type=Path, default=Path("/etc/step-ca/secrets/dockscan-provisioner-password"))
+    create_provisioner.add_argument("--service", default="step-ca")
+    create_provisioner.add_argument("--dry-run", action="store_true")
+    create_provisioner.add_argument("--apply", action="store_true")
+    create_provisioner.add_argument("--confirm", help="must exactly match --name when applying")
     blueprint = commands.add_parser("blueprint", help="create or safely inspect .dsrcvr recovery blueprints")
     blueprint_commands = blueprint.add_subparsers(dest="blueprint_action", required=True)
     create = blueprint_commands.add_parser("create", help="package an existing DockScan inventory into a blueprint")
@@ -179,6 +190,13 @@ def parser() -> argparse.ArgumentParser:
     site.add_argument("--input", type=Path, required=True, help="recovery-kit docs directory")
     site.add_argument("--output", type=Path, required=True, help="static site directory")
     site.add_argument("--title", default="DockScan system documentation")
+    update = commands.add_parser("update", help="check or apply a pinned DockScan release update")
+    update.add_argument("--repository", default="https://github.com/Danng-Dev/DockScan.git")
+    update.add_argument("--ref", help="immutable release tag or commit required with --apply")
+    update.add_argument("--check", action="store_true", help="list available release tags")
+    update.add_argument("--apply", action="store_true", help="install --ref after explicit confirmation")
+    update.add_argument("--verify-tag", action="store_true", help="verify a signed Git release tag")
+    update.add_argument("--service", action="store_true", help="also install the optional agent systemd template")
     return p
 
 
@@ -187,13 +205,16 @@ def main() -> None:
     if getattr(args, "accept_insecure", False) and not getattr(args, "i_understand_insecure", False):
         parser.error("--accept-insecure requires --i-understand-insecure")
     if args.action == "step-ca":
-        cert = args.cert or Path("/etc/dockscan") / f"{args.name}.pem"
-        key = args.key or Path("/etc/dockscan") / f"{args.name}-key.pem"
-        result = enroll_step_ca(args.ca_url, args.fingerprint, args.name, cert, key, args.san, None, args.dry_run)
-        if args.dry_run:
-            print("Step CA enrollment validated. Commands will run without printing sensitive token values.")
+        if args.step_action == "enroll":
+            cert = args.cert or Path("/etc/dockscan") / f"{args.name}.pem"
+            key = args.key or Path("/etc/dockscan") / f"{args.name}-key.pem"
+            result = enroll_step_ca(args.ca_url, args.fingerprint, args.name, cert, key, args.san, None, args.dry_run)
+            if args.dry_run:
+                print("Step CA enrollment validated. Commands will run without printing sensitive token values.")
+            else:
+                print(f"Issued certificate {cert} and private key {key} for {args.name}.")
         else:
-            print(f"Issued certificate {cert} and private key {key} for {args.name}.")
+            print(json.dumps(create_jwk_provisioner(args.name, args.ca_config, args.password_file, args.service, args.apply, args.confirm, args.dry_run), indent=2))
         return
     if args.action == "blueprint":
         if args.blueprint_action == "create":
@@ -258,6 +279,15 @@ def main() -> None:
         pages = staticify(args.input, args.output, args.title)
         print(f"Static documentation site written to {args.output.resolve()} ({len(pages) - 1} pages plus index)")
         return
+    if args.action == "update":
+        if args.check:
+            print(json.dumps({"available_versions": update_check(args.repository)}, indent=2))
+            return
+        if not args.apply or not args.ref:
+            parser.error("update requires --check, or both --apply and --ref")
+        extras = ["--service"] if args.service else []
+        print(f"Updated DockScan to commit {update_apply(args.repository, args.ref, args.verify_tag, extras)}")
+        return
     if args.action == "agent":
         if args.enroll:
             if not args.controller or not args.token_file:
@@ -304,5 +334,13 @@ def main() -> None:
     print(f"Recovery kit written to {args.output.resolve()}")
 
 
+def safe_main() -> None:
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\nDockScan cancelled by operator; no recovery operation was executed.", file=__import__("sys").stderr)
+        raise SystemExit(130)
+
+
 if __name__ == "__main__":
-    main()
+    safe_main()

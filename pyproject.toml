@@ -10,7 +10,7 @@ requires-python = ">=3.10"
 authors = [{name = "DockScan"}]
 
 [project.scripts]
-dockscan = "dockscan.cli:main"
+dockscan = "dockscan.cli:safe_main"
 
 [tool.setuptools.packages.find]
 include = ["dockscan*"]
