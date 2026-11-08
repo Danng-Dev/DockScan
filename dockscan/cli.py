@@ -107,7 +107,7 @@ def parser() -> argparse.ArgumentParser:
     provisioner_commands = provisioner.add_subparsers(dest="provisioner_action", required=True)
     create_provisioner = provisioner_commands.add_parser("create", help="create a local password-protected JWK provisioner and restart step-ca")
     create_provisioner.add_argument("--name", required=True)
-    create_provisioner.add_argument("--ca-config", type=Path, default=Path("/etc/step-ca/config/ca.json"))
+    create_provisioner.add_argument("--ca-config", type=Path, help="explicit ca.json path; auto-detected on apply when omitted")
     create_provisioner.add_argument("--password-file", type=Path, default=Path("/etc/step-ca/secrets/dockscan-provisioner-password"))
     create_provisioner.add_argument("--service", default="step-ca")
     create_provisioner.add_argument("--dry-run", action="store_true")

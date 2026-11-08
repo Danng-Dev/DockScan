@@ -29,6 +29,15 @@ sudo dockscan step-ca provisioner create --name dockscan-agents \
   --service step-ca --apply --confirm dockscan-agents
 ```
 
+DockScan auto-detects `ca.json` from `STEPPATH`, `step path`, common system paths, and the selected systemd unit. If the CA runs from a nonstandard path, pass it explicitly:
+
+```bash
+sudo dockscan step-ca provisioner create --name dockscan-agents \
+  --ca-config /root/.step/config/ca.json \
+  --password-file /root/.step/secrets/dockscan-agents.password \
+  --service step-ca --apply --confirm dockscan-agents
+```
+
 Do not expose the generated password file, commit it, or copy it into a `.dsrcvr` blueprint. Restrict its directory to the CA administrator and back it up according to your CA key-management policy.
 
 ## Renewal

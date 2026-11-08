@@ -54,7 +54,29 @@ def enroll_step_ca(ca_url: str, fingerprint: str, name: str, cert: Path, key: Pa
     return commands
 
 
-def create_jwk_provisioner(name: str, ca_config: Path, password_file: Path, service: str, apply: bool, confirm: str | None, dry_run: bool = False) -> dict:
+def discover_ca_config(service: str) -> Path:
+    """Locate a local Step CA config without guessing a writable path."""
+    candidates = []
+    if os.environ.get("STEPPATH"):
+        candidates.append(Path(os.environ["STEPPATH"]) / "config" / "ca.json")
+    if shutil.which("step"):
+        result = subprocess.run(["step", "path"], text=True, capture_output=True, check=False)
+        if result.returncode == 0 and result.stdout.strip():
+            candidates.append(Path(result.stdout.strip()) / "config" / "ca.json")
+    candidates.extend([Path("/etc/step-ca/config/ca.json"), Path("/root/.step/config/ca.json")])
+    if shutil.which("systemctl"):
+        result = subprocess.run(["systemctl", "show", service, "--property=ExecStart", "--value"], text=True, capture_output=True, check=False)
+        if result.returncode == 0:
+            for value in re.findall(r"[^\s;=]+ca\.json", result.stdout):
+                candidates.append(Path(value.strip("'\"")))
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    searched = ", ".join(str(item) for item in candidates) or "no standard paths"
+    raise ValueError(f"CA configuration not found. Searched: {searched}. Pass --ca-config /path/to/ca.json explicitly.")
+
+
+def create_jwk_provisioner(name: str, ca_config: Path | None, password_file: Path, service: str, apply: bool, confirm: str | None, dry_run: bool = False) -> dict:
     """Create a password-protected JWK provisioner through the supported Step CLI.
 
     This intentionally does not hand-edit ca.json. `--apply` and a matching
@@ -62,12 +84,15 @@ def create_jwk_provisioner(name: str, ca_config: Path, password_file: Path, serv
     """
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._@-]{0,127}", name):
         raise ValueError("provisioner name may contain only letters, digits, '.', '_', '@', and '-'")
-    command = ["step", "ca", "provisioner", "add", name, "--type", "JWK", "--create", "--password-file", str(password_file), "--ca-config", str(ca_config)]
-    preview = {"command": ["step", "ca", "provisioner", "add", name, "--type", "JWK", "--create", "--password-file", "__GENERATED_PRIVATE_FILE__", "--ca-config", str(ca_config)], "service": service, "ca_config": str(ca_config), "password_file": str(password_file), "will_restart": True}
+    displayed_config = str(ca_config) if ca_config else "__AUTO_DETECT_ON_APPLY__"
+    command = ["step", "ca", "provisioner", "add", name, "--type", "JWK", "--create", "--password-file", str(password_file), "--ca-config", displayed_config]
+    preview = {"command": ["step", "ca", "provisioner", "add", name, "--type", "JWK", "--create", "--password-file", "__GENERATED_PRIVATE_FILE__", "--ca-config", displayed_config], "service": service, "ca_config": displayed_config, "password_file": str(password_file), "will_restart": True}
     if dry_run:
         return {"applied": False, "dry_run": True, **preview}
-    if not ca_config.is_file():
-        raise ValueError(f"CA configuration not found: {ca_config}")
+    ca_config = ca_config or discover_ca_config(service)
+    command[-1] = str(ca_config)
+    preview["ca_config"] = str(ca_config)
+    preview["command"][-1] = str(ca_config)
     if not shutil.which("step") or not shutil.which("openssl"):
         raise RuntimeError("both step and openssl CLIs are required")
     if not apply or confirm != name:
