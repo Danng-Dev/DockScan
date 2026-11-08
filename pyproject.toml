@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dockscan"
+version = "0.1.0"
+description = "Inventory a Docker homelab and generate a recovery kit"
+requires-python = ">=3.10"
+authors = [{name = "DockScan"}]
+
+[project.scripts]
+dockscan = "dockscan.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["dockscan*"]

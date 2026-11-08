@@ -1,0 +1,22 @@
+[Unit]
+Description=DockScan outbound recovery agent (%i)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=dockscan
+Group=dockscan
+EnvironmentFile=/etc/dockscan/agents/%i.env
+ExecStart=/usr/local/bin/dockscan agent --enroll --controller ${DOCKSCAN_CONTROLLER} --token-file ${DOCKSCAN_TOKEN_FILE} --name %H --tls-ca ${DOCKSCAN_TLS_CA} --tls-cert ${DOCKSCAN_TLS_CERT} --tls-key ${DOCKSCAN_TLS_KEY}
+Restart=on-failure
+RestartSec=30
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/dockscan /var/log/dockscan
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
