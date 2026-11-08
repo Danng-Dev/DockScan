@@ -40,6 +40,26 @@ sudo dockscan step-ca provisioner create --name dockscan-agents \
 
 Do not expose the generated password file, commit it, or copy it into a `.dsrcvr` blueprint. Restrict its directory to the CA administrator and back it up according to your CA key-management policy.
 
+If the file is lost before it is safely stored, you may explicitly display it once during creation. This writes a secret to terminal history/scrollback, so it requires an acknowledgement:
+
+```bash
+sudo dockscan step-ca provisioner create --name dockscan-agents \
+  --apply --confirm dockscan-agents --show-password --i-understand-secret-output
+```
+
+## Enroll using the custom provisioner
+
+On a trusted CA-side host where the protected provisioner password file is available, DockScan can pass it directly to Step without printing or copying the secret:
+
+```bash
+sudo dockscan step-ca enroll --ca-url https://ca.internal --fingerprint '<fingerprint>' \
+  --name agent-1 --san agent-1.internal \
+  --provisioner dockscan-agents \
+  --provisioner-password-file /etc/step-ca/.step/secrets/dockscan-agents.password
+```
+
+For a remote machine, do not distribute the reusable provisioner password. Generate a short-lived, single-use enrollment token or use an ACME/device-identity provisioner instead.
+
 ## Renewal
 
 Prefer short-lived client certificates plus a systemd timer that runs `step ca renew` and reloads the dependent service. Renewal uses the existing key and certificate for mTLS authentication, so restrict key read access and monitor expiry/renewal failures. See the official [Step CA renewal guide](https://smallstep.com/docs/step-ca/renewal/).

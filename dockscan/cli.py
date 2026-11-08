@@ -103,6 +103,8 @@ def parser() -> argparse.ArgumentParser:
     enroll.add_argument("--key", type=Path, help="output private-key path; defaults to /etc/dockscan/<name>-key.pem")
     enroll.add_argument("--san", action="append", default=[], help="DNS name or IP SAN; repeat as needed")
     enroll.add_argument("--dry-run", action="store_true", help="validate and show no token-bearing commands")
+    enroll.add_argument("--provisioner", help="custom JWK provisioner name")
+    enroll.add_argument("--provisioner-password-file", type=Path, help="owner-only password file for --provisioner")
     provisioner = step_commands.add_parser("provisioner", help="manage local CA provisioners using the supported Step CLI")
     provisioner_commands = provisioner.add_subparsers(dest="provisioner_action", required=True)
     create_provisioner = provisioner_commands.add_parser("create", help="create a local password-protected JWK provisioner and restart step-ca")
@@ -113,6 +115,8 @@ def parser() -> argparse.ArgumentParser:
     create_provisioner.add_argument("--dry-run", action="store_true")
     create_provisioner.add_argument("--apply", action="store_true")
     create_provisioner.add_argument("--confirm", help="must exactly match --name when applying")
+    create_provisioner.add_argument("--show-password", action="store_true", help="explicitly print the generated password once after applying")
+    create_provisioner.add_argument("--i-understand-secret-output", action="store_true", help="required with --show-password")
     blueprint = commands.add_parser("blueprint", help="create or safely inspect .dsrcvr recovery blueprints")
     blueprint_commands = blueprint.add_subparsers(dest="blueprint_action", required=True)
     create = blueprint_commands.add_parser("create", help="package an existing DockScan inventory into a blueprint")
@@ -208,13 +212,15 @@ def main() -> None:
         if args.step_action == "enroll":
             cert = args.cert or Path("/etc/dockscan") / f"{args.name}.pem"
             key = args.key or Path("/etc/dockscan") / f"{args.name}-key.pem"
-            result = enroll_step_ca(args.ca_url, args.fingerprint, args.name, cert, key, args.san, None, args.dry_run)
+            result = enroll_step_ca(args.ca_url, args.fingerprint, args.name, cert, key, args.san, None, args.dry_run, args.provisioner, args.provisioner_password_file)
             if args.dry_run:
                 print("Step CA enrollment validated. Commands will run without printing sensitive token values.")
             else:
                 print(f"Issued certificate {cert} and private key {key} for {args.name}.")
         else:
-            print(json.dumps(create_jwk_provisioner(args.name, args.ca_config, args.password_file, args.service, args.apply, args.confirm, args.dry_run), indent=2))
+            if args.show_password and not args.i_understand_secret_output:
+                parser.error("--show-password requires --i-understand-secret-output")
+            print(json.dumps(create_jwk_provisioner(args.name, args.ca_config, args.password_file, args.service, args.apply, args.confirm, args.dry_run, args.show_password), indent=2))
         return
     if args.action == "blueprint":
         if args.blueprint_action == "create":

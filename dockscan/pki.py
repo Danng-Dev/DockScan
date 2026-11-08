@@ -29,7 +29,7 @@ def subject_common_name(certificate: dict | None) -> str | None:
     return None
 
 
-def enroll_step_ca(ca_url: str, fingerprint: str, name: str, cert: Path, key: Path, sans: list[str], token_file: Path | None = None, dry_run: bool = False) -> list[list[str]]:
+def enroll_step_ca(ca_url: str, fingerprint: str, name: str, cert: Path, key: Path, sans: list[str], token_file: Path | None = None, dry_run: bool = False, provisioner: str | None = None, provisioner_password_file: Path | None = None) -> list[list[str]]:
     """Bootstrap Step trust and issue a local TLS identity certificate.
 
     The Step CLI is responsible for the CA's chosen provisioner/auth flow.
@@ -40,6 +40,14 @@ def enroll_step_ca(ca_url: str, fingerprint: str, name: str, cert: Path, key: Pa
     issue = ["step", "ca", "certificate", name, str(cert), str(key)]
     for san in sans:
         issue.extend(["--san", san])
+    if provisioner:
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._@-]{0,127}", provisioner):
+            raise ValueError("invalid provisioner name")
+        if not provisioner_password_file or not provisioner_password_file.is_file():
+            raise ValueError("custom provisioner enrollment requires --provisioner-password-file")
+        if os.name != "nt" and provisioner_password_file.stat().st_mode & 0o077:
+            raise ValueError("provisioner password file permissions must be 0600 or stricter")
+        issue.extend(["--provisioner", provisioner, "--provisioner-password-file", str(provisioner_password_file)])
     if token_file:
         raise ValueError("--token-file is not supported because Step CLI tokens would be exposed in process arguments; use a provisioner credential flow instead")
     commands.append(issue)
@@ -76,7 +84,7 @@ def discover_ca_config(service: str) -> Path:
     raise ValueError(f"CA configuration not found. Searched: {searched}. Pass --ca-config /path/to/ca.json explicitly.")
 
 
-def create_jwk_provisioner(name: str, ca_config: Path | None, password_file: Path, service: str, apply: bool, confirm: str | None, dry_run: bool = False) -> dict:
+def create_jwk_provisioner(name: str, ca_config: Path | None, password_file: Path, service: str, apply: bool, confirm: str | None, dry_run: bool = False, show_password: bool = False) -> dict:
     """Create a password-protected JWK provisioner through the supported Step CLI.
 
     This intentionally does not hand-edit ca.json. `--apply` and a matching
@@ -116,4 +124,7 @@ def create_jwk_provisioner(name: str, ca_config: Path | None, password_file: Pat
         # Best effort: restore the previous CA configuration to service after a failed restart.
         subprocess.run(["systemctl", "restart", service], check=False, capture_output=True)
         raise
-    return {"applied": True, "backup": str(backup), **preview}
+    result = {"applied": True, "backup": str(backup), **preview}
+    if show_password:
+        result["WARNING_password_displayed_once"] = secret
+    return result
