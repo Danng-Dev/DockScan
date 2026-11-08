@@ -42,6 +42,8 @@ dockscan agent --json --ignore-secrets --services step-ca,tailscale
 
 This is intended for `scan --remote`. It prints a single JSON inventory document.
 
+For a full remote-machine installation and enrollment walkthrough, see [AGENT_SETUP.md](AGENT_SETUP.md).
+
 ### Serve a direct mTLS inventory request
 
 ```bash

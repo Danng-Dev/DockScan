@@ -13,6 +13,7 @@ DockScan is a dependency-free Linux CLI for documenting a Docker homelab and pro
 - [Troubleshooting](docs/TROUBLESHOOTING.md)
 - [Step CA setup and provisioners](docs/STEP_CA.md)
 - [Updates](docs/UPDATES.md)
+- [Remote agent setup](docs/AGENT_SETUP.md)
 
 ## Install
 
